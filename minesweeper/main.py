@@ -283,7 +283,7 @@ def game_loop(game: Minesweeper) -> None:
             print(game.render())
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("game_params", nargs="?")
     parser.add_argument("-s", "--session-id", nargs="?")
@@ -312,9 +312,14 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """Wrapper around `_main` that handles `KeyboardInterrupt`s"""
     try:
-        raise SystemExit(main())
+        raise SystemExit(_main(argv))
     except KeyboardInterrupt:
         print("\rgoodbye")
         raise SystemExit(0)
+
+
+if __name__ == "__main__":
+    main()

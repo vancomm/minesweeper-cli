@@ -4,7 +4,7 @@ A Minesweeper client compatible with [minesweeper-server](https://github.com/van
 
 ## todo
 
-- [ ] add proper cli commands (new game, resume game)
-- [ ] maybe remove hardcoded server url
-- [ ] add chords (?)
-- [ ] switch to curses (???)
+- [x] add proper cli commands (new game, resume game)
+- [x] maybe remove hardcoded server url
+- [x] add chords (?)
+- [ ] ~~switch to curses (???)~~
