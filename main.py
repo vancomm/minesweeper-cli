@@ -218,6 +218,11 @@ class Minesweeper:
         )
         return "\n".join((top_ruler, *field))
 
+    def mines_remaining(self) -> int | None:
+        if not self.grid:
+            return self.mine_count
+        return self.mine_count - sum(1 for x in self.grid if x == -1)
+
     def playtime(self) -> str:
         if not self.started_at:
             return "N/A"
@@ -251,7 +256,7 @@ def restore_game(
         raise ValueError("you must supply game params or session id")
 
 
-def game_loop(game: Minesweeper):
+def game_loop(game: Minesweeper) -> None:
     print("<Ctrl+C> to exit, <H+Enter> for help")
     if game.session_id is not None:
         print(f"session id: {game.session_id}")
@@ -260,10 +265,11 @@ def game_loop(game: Minesweeper):
     print(game.render())
 
     while not (game.won or game.dead):
-        cmd, *args = input("> ").split()
+        prompt = f"({game.mines_remaining()}) > "
+        cmd, *args = input(prompt).split()
         cmd = cmd.lower()
         if cmd not in game.COMMANDS:
-            print("unknown command (<H+Enter> for help)")
+            print(f"`{cmd}`: unknown command (<H+Enter> for help)")
             continue
         command = game.COMMANDS[cmd]
         if len(args) != command.nargs:
@@ -291,7 +297,12 @@ def main(argv: list[str] | None = None) -> int:
         print(e)
         return 1
 
-    game_loop(game)
+    try:
+        game_loop(game)
+    except KeyboardInterrupt:
+        if game.session_id and not (game.dead or game.won):
+            print(f"\ruse session id to continue: {game.session_id}")
+        raise
 
     if game.dead:
         print("You lost!")
