@@ -299,7 +299,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     try:
         game_loop(game)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         if game.session_id and not (game.dead or game.won):
             print(f"\ruse session id to continue: {game.session_id}")
         raise
@@ -316,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
     """Wrapper around `_main` that handles `KeyboardInterrupt`s"""
     try:
         raise SystemExit(_main(argv))
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         print("\rgoodbye")
         raise SystemExit(0)
 
