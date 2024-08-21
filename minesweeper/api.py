@@ -1,15 +1,18 @@
 import json
-from typing import NotRequired, TypedDict
+from typing import NotRequired, Protocol, TypedDict
 
 from requests import get, post
 from websockets.sync.connection import Connection
 
 
-class NewGameParams(TypedDict):
+class GridParams(TypedDict):
     width: int
     height: int
     mine_count: int
     unique: bool
+
+
+class NewGameParams(GridParams):
     x: int
     y: int
 
@@ -25,6 +28,18 @@ class GameSession(TypedDict):
     won: bool
     started_at: int
     ended_at: NotRequired[int]
+
+
+class GameAPI(Protocol):
+    def get(self) -> GameSession: ...
+
+    def open(self, x: int, y: int) -> GameSession: ...
+
+    def flag(self, x: int, y: int) -> GameSession: ...
+
+    def chord(self, x: int, y: int) -> GameSession: ...
+
+    def reveal(self) -> GameSession: ...
 
 
 class GameHTTPAPI:

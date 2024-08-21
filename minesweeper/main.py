@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import argparse
 import collections
-import logging
 import math
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from itertools import batched
 from typing import Callable, NamedTuple
 
@@ -13,130 +10,7 @@ import requests
 from colorama import Back, Fore, Style
 from websockets.sync.client import connect
 
-from minesweeper.api import GameHTTPAPI, GameSession, GameWSAPI
-
-
-@dataclass
-class GameParams:
-    width: int
-    height: int
-    mine_count: int
-    unique: bool
-
-    def validate_move(self, x: int, y: int) -> bool:
-        return 0 <= x < self.width and 0 <= y < self.height
-
-
-class Minesweeper:
-    def __init__(self, wsapi: GameWSAPI, session: GameSession) -> None:
-        self.wsapi = wsapi
-        self.session = session
-
-    def validate_move(self, x: int, y: int) -> bool:
-        return 0 <= x < self.session["width"] and 0 <= y < self.session["height"]
-
-    def open(self: Minesweeper, args: list[str]) -> None:
-        try:
-            x, y = map(int, args)
-        except ValueError:
-            raise ValueError("args must be integer")
-        if not self.validate_move(x, y):
-            raise ValueError("out of bounds")
-        i = y * self.session["width"] + x
-        if self.session["grid"][i] != -2:
-            self.chord(args)
-        else:
-            self.session = self.wsapi.open(x, y)
-
-    def chord(self: Minesweeper, args: list[str]) -> None:
-        try:
-            x, y = map(int, args)
-        except ValueError:
-            raise ValueError("args must be integer")
-        if not self.validate_move(x, y):
-            raise ValueError("out of bounds")
-        i = y * self.session["width"] + x
-        if not 0 <= self.session["grid"][i] <= 8:
-            raise ValueError("cannot chord closed square")
-        self.session = self.wsapi.chord(x, y)
-
-    def flag(self: Minesweeper, args: list[str]) -> None:
-        try:
-            x, y = map(int, args)
-        except ValueError:
-            raise ValueError("args must be integer")
-        if not self.validate_move(x, y):
-            raise ValueError("out of bounds")
-        self.session = self.wsapi.flag(x, y)
-
-    HELP = """\
- Available commands:
-    o [X] [Y]   : open (or chord) a square at X:Y
-    f [X] [Y]   : flag (or unflag) a square at X:Y
-    h           : print this message
-"""
-
-    # COMMANDS = {
-    #     "o": Command(open, 2),
-    #     "f": Command(flag, 2),
-    #     "h": Command(lambda *_: (_ for _ in ()).throw(ValueError(Minesweeper.HELP)), 0),
-    # }
-
-    CELL_TO_CH = collections.defaultdict(
-        lambda: "%",  # unknown cell code
-        {
-            -3: "?",  # question mark
-            -2: "#",  # unknown
-            -1: "F",  # mine
-            0: ".",
-            1: f"{Fore.CYAN}1{Style.RESET_ALL}",
-            2: f"{Fore.GREEN}2{Style.RESET_ALL}",
-            3: f"{Fore.RED}3{Style.RESET_ALL}",
-            4: f"{Style.DIM}{Fore.BLUE}4{Style.RESET_ALL}",
-            5: f"{Style.DIM}{Fore.RED}5{Style.RESET_ALL}",
-            6: f"{Style.DIM}{Fore.GREEN}6{Style.RESET_ALL}",
-            7: f"{Style.DIM}{Fore.LIGHTBLACK_EX}7{Style.RESET_ALL}",
-            8: f"{Style.DIM}{Fore.BLUE}8{Style.RESET_ALL}",
-            32: f"!",  # flag
-            64: "*",  # post game-over mine
-            65: f"{Fore.WHITE}{Back.RED}*{Style.RESET_ALL}",  # post game-over exploded mine
-            66: "X",  # post game-over false flag
-            67: "x",  # post game-over unflagged mine
-        },
-    )
-
-    def render(self) -> str:
-        grid = self.session["grid"]
-        colwidth = math.ceil(math.log10(self.session["width"]))
-        field = (
-            " ".join(" " * (colwidth - 1) + f"{self.CELL_TO_CH[ch]}" for ch in line)
-            for line in batched(grid, self.session["width"])
-        )
-        field = (
-            f"{Style.DIM}{i: >{colwidth}}{Style.RESET_ALL} {line}"
-            for i, line in enumerate(field)
-        )
-        top_ruler = (
-            " " * (colwidth + 1)
-            + Style.DIM
-            + " ".join(f"{i: >{colwidth}}" for i in range(self.session["width"]))
-            + Style.RESET_ALL
-        )
-        return "\n".join((top_ruler, *field))
-
-    def mines_remaining(self) -> int | None:
-        return self.session["mine_count"] - sum(
-            1 for x in self.session["grid"] if x == -1
-        )
-
-    def playtime(self) -> str:
-        if "ended_at" not in self.session:
-            now = math.trunc(datetime.now(timezone.utc).timestamp())
-            delta = now - self.session["started_at"]
-        else:
-            delta = self.session["ended_at"] - self.session["started_at"]
-        return str(delta)
-
+from minesweeper.api import GameAPI, GameHTTPAPI, GameSession, GameWSAPI, GridParams
 
 CELL_TO_CH = collections.defaultdict(
     lambda: "%",  # unknown cell code
@@ -153,8 +27,8 @@ CELL_TO_CH = collections.defaultdict(
         6: f"{Style.DIM}{Fore.GREEN}6{Style.RESET_ALL}",
         7: f"{Style.DIM}{Fore.LIGHTBLACK_EX}7{Style.RESET_ALL}",
         8: f"{Style.DIM}{Fore.BLUE}8{Style.RESET_ALL}",
-        32: f"!",  # flag
-        64: "*",  # post game-over mine
+        32: "!",  # flag
+        64: "*",  # post game-over correct flag
         65: f"{Fore.WHITE}{Back.RED}*{Style.RESET_ALL}",  # post game-over exploded mine
         66: "X",  # post game-over false flag
         67: "x",  # post game-over unflagged mine
@@ -193,12 +67,7 @@ def validate_url(url: str) -> str:
         raise ValueError("server is unavailable")
 
 
-class Command(NamedTuple):
-    callback: Callable[[GameSession, GameWSAPI, list[str]], GameSession | None]
-    nargs: int
-
-
-def open(session: GameSession, wsapi: GameWSAPI, args: list[str]) -> GameSession:
+def open(session: GameSession, api: GameAPI, args: list[str]) -> GameSession:
     try:
         x, y = map(int, args)
     except ValueError:
@@ -206,19 +75,39 @@ def open(session: GameSession, wsapi: GameWSAPI, args: list[str]) -> GameSession
     if not (0 <= x < session["width"]) or not (0 <= y < session["height"]):
         raise ValueError("out of bounds")
     if session["grid"][y * session["width"] + x] == -2:
-        return wsapi.open(x, y)
+        return api.open(x, y)
     else:
-        return wsapi.chord(x, y)
+        return api.chord(x, y)
 
 
-def flag(session: GameSession, wsapi: GameWSAPI, args: list[str]) -> GameSession:
+def flag(session: GameSession, api: GameAPI, args: list[str]) -> GameSession:
     try:
         x, y = map(int, args)
     except ValueError:
         raise ValueError("args must be integer")
     if not (0 <= x < session["width"]) or not (0 <= y < session["height"]):
         raise ValueError("out of bounds")
-    return wsapi.flag(x, y)
+    return api.flag(x, y)
+
+
+def new_game(params: GridParams, url: str, args: list[str]) -> GameSession:
+    try:
+        x, y = map(int, args)
+    except ValueError:
+        raise ValueError("args must be integer")
+    if not (0 <= x < params["width"]) or not (0 <= y < params["height"]):
+        raise ValueError("out of bounds")
+    return GameHTTPAPI.new_game(url + "/game", {**params, "x": x, "y": y})
+
+
+class PreGameCommand(NamedTuple):
+    callback: Callable[[GridParams, str, list[str]], GameSession | None]
+    nargs: int
+
+
+class Command(NamedTuple):
+    callback: Callable[[GameSession, GameAPI, list[str]], GameSession | None]
+    nargs: int
 
 
 HELP = """\
@@ -227,6 +116,17 @@ HELP = """\
     f [X] [Y]   : flag (or unflag) a square at X:Y
     h           : print this message
 """
+
+PRE_GAME_DISPATCH = {
+    "o": PreGameCommand(new_game, 2),
+    "f": PreGameCommand(
+        lambda *_: (_ for _ in ()).throw(
+            ValueError("use `o` to open any square to start the game")
+        ),
+        2,
+    ),
+    "h": PreGameCommand(lambda *_: (_ for _ in ()).throw(ValueError(HELP)), 0),
+}
 
 DISPATCH: dict[str, Command] = {
     "o": Command(open, 2),
@@ -237,9 +137,24 @@ DISPATCH: dict[str, Command] = {
 
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("game_params", nargs="?")
-    parser.add_argument("-s", "--session-id", nargs="?")
-    parser.add_argument("-u", "--url", nargs="?", default="http://localhost:8000/v1")
+    parser.add_argument(
+        "game_params",
+        nargs="?",
+        help="game grid's width, height, mine count (and optionally uniqueness, 1 or 0) separated with colons",
+    )
+    parser.add_argument(
+        "-s",
+        "--session-id",
+        nargs="?",
+        help="id of a previosly started session to resume it",
+    )
+    parser.add_argument(
+        "-u",
+        "--url",
+        nargs="?",
+        default="http://localhost:8000/v1",
+        help="URL of a (remote) game server",
+    )
     args = parser.parse_args(argv)
 
     if bool(args.game_params) == bool(args.session_id):
@@ -257,44 +172,35 @@ def _main(argv: list[str] | None = None) -> int:
 
     if args.game_params:
         if len((parts := args.game_params.split(":"))) not in {3, 4}:
-            raise ValueError("seed may contain 3 or 4 parts")
+            raise ValueError("game params may contain 3 or 4 parts")
         if not all(s for s in parts if s.isdigit()):
-            raise ValueError("seed parts must be digits")
+            raise ValueError("game params must be digits")
         width, height, mine_count, *u = map(int, parts)
         unique = bool(u[0]) if u else True
+        params = GridParams(
+            width=width, height=height, mine_count=mine_count, unique=unique
+        )
         grid = [-2] * (width * height)
         print(render_grid(grid, width))
-        while not session_id:
+        while not session:
             prompt = f"({mine_count}) > "
-            cmd, *args = input(prompt).split(" ")
+            cmd, *args = input(prompt).split()
             cmd = cmd.lower()
-            if cmd != "o":
-                print("use `o` to open any square to start the game")
+            if cmd not in PRE_GAME_DISPATCH:
+                print(f"`{cmd}`: unknown command")
                 continue
-            if len(args) != 2:
-                print(f"`o`: expected 2 args but got {len(args)}")
+            command = PRE_GAME_DISPATCH[cmd]
+            if len(args) != command.nargs:
+                print(f"`{cmd}`: expected {command.nargs} args, got {len(args)}")
                 continue
             try:
-                x, y = map(int, args)
-            except ValueError:
-                print("`o`: args must be integer")
-                continue
-            if not 0 <= x < width and 0 <= y < height:
-                print("`o`: out of bounds")
-                continue
-            session = GameHTTPAPI.new_game(
-                url + "/game",
-                {
-                    "width": width,
-                    "height": height,
-                    "mine_count": mine_count,
-                    "unique": unique,
-                    "x": x,
-                    "y": y,
-                },
-            )
-            session_id = session["session_id"]
-            print(f"session id: {session_id}")
+                update = command.callback(params, url, args)
+                if update:
+                    session = update
+                    session_id = session["session_id"]
+                    print(f"session id: {session_id}")
+            except ValueError as e:
+                print(f"`{cmd}`: {e}")
 
     ws_url = (
         "ws://"
@@ -303,7 +209,6 @@ def _main(argv: list[str] | None = None) -> int:
         + session_id
         + "/connect"
     )
-    print(ws_url)
     with connect(ws_url) as ws:
         wsapi = GameWSAPI(ws)
 
@@ -330,7 +235,7 @@ def _main(argv: list[str] | None = None) -> int:
                     session = update
                     print(render_grid(session["grid"], session["width"]))
             except ValueError as e:
-                print(e)
+                print(f"`{cmd}`: {e}")
 
     if session["dead"]:
         print("You lost!")
