@@ -2,5 +2,7 @@ certifi==2024.7.4
 charset-normalizer==3.3.2
 colorama==0.4.6
 idna==3.7
+-e git+ssh://git@github.com/vancomm/minesweeper-cli.git@3a2d4052ab35e3c54b17dc8896709837416a271c#egg=minesweeper
 requests==2.32.3
 urllib3==2.2.2
+websockets==13.0

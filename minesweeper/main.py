@@ -30,8 +30,8 @@ CELL_TO_CH = collections.defaultdict(
         32: "!",  # flag
         64: "*",  # post game-over correct flag
         65: f"{Fore.WHITE}{Back.RED}*{Style.RESET_ALL}",  # post game-over exploded mine
-        66: "X",  # post game-over false flag
-        67: "x",  # post game-over unflagged mine
+        66: "-",  # post game-over false flag
+        67: "*",  # post game-over unflagged mine
     },
 )
 
